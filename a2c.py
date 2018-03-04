@@ -1,10 +1,5 @@
-from baselines_utils import ortho_init
-import constants as c
-import glob
-import numpy as np
-import os
-import tensorflow as tf
-import utils
+import glob, os, utils
+import constants as c, numpy as np, tensorflow as tf
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -29,8 +24,7 @@ class A2C:
         self.summary_writer = tf.summary.FileWriter(c.SUMMARY_DIR, self.sess.graph)
 
 
-    def define_graph(self):
-        self.global_step = tf.Variable(0, name="global_step", trainable=False)
+    def define_placeholders():
         self.s_imgs_batch = tf.placeholder(dtype=tf.float32,
                                            shape=[None, c.IN_WIDTH,
                                                   c.IN_HEIGHT, c.IN_CHANNELS])
@@ -40,14 +34,19 @@ class A2C:
         self.actor_labels = tf.placeholder(dtype=tf.float32)
         self.critic_labels = tf.placeholder(dtype=tf.float32)
 
+
+    def define_graph(self):
+        self.global_step = tf.Variable(0, name="global_step", trainable=False)
+        self.define_placeholders()
+
         with tf.variable_scope("model", reuse=False):
-            flattened_small_conv = self.conv_layers("small_conv",
+            flattened_small_conv = utils.conv_layers("small_conv",
                                                     self.s_imgs_batch,
                                                     c.SMALL_CONV_CHANNELS,
                                                     c.SMALL_CONV_KERNELS,
                                                     c.SMALL_CONV_STRIDES)
 
-            flattened_big_conv = self.conv_layers("big_conv",
+            flattened_big_conv = utils.conv_layers("big_conv",
                                                   self.s_imgs_batch,
                                                   c.BIG_CONV_CHANNELS,
                                                   c.BIG_CONV_KERNELS,
@@ -56,7 +55,7 @@ class A2C:
             flattened = tf.concat([flattened_small_conv, flattened_big_conv],
                                    axis=1, name="flattened_conv")
 
-            fc_output = self.fc_layers("fc", flattened, c.FC_SIZES)
+            fc_output = utils.fc_layers("fc", flattened, c.FC_SIZES)
 
             #policy output layer
             self.policy_logits = tf.layers.dense(fc_output, self.num_actions, name='policy_logits')
@@ -72,7 +71,7 @@ class A2C:
         logpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.policy_logits,
                                                                 labels=self.actions_taken)
 
-        self.entropy = tf.reduce_mean(self.calculate_entropy(self.policy_probs))
+        self.entropy = tf.reduce_mean(utils.entropy(self.policy_probs))
         self.actor_loss = tf.reduce_mean(self.actor_labels * logpac)
         self.actor_loss = self.actor_loss - c.ENTROPY_REGULARIZATION_WEIGHT * self.entropy
 
@@ -90,19 +89,22 @@ class A2C:
         self.ep_reward_summary = tf.summary.scalar("episode_reward", self.ep_reward)
 
 
-    def get_values(self, s_batch):
-        v_s = self.sess.run(self.value_preds, feed_dict={self.x_batch: s_batch})
-        return v_s
+    def get_values(self, s_imgs_batch, s_vector_batch):
+        return self.value_preds.eval(feed_dict={self.s_imgs_batch: s_imgs_batch,
+                                                self.s_vector_batch: s_vector_batch})
 
-    # TODO: make take in 3 states
-    def train_step(self, s_batch, a_batch, r_batch):
-        v_s = self.get_values(s_batch)
+
+    def train_step(self, batch_triple, a_batch, r_batch):
+        s_imgs_batch, s_vector_batch = utils.unpack_batch_triple(batch_triple)
+
+        v_s = self.get_values(s_imgs_batch, s_vector_batch)
         advantage = r_batch - v_s #estimated k-step return - v_s
         k_step_return = np.reshape(r_batch, [-1]) #turn into row vec
         advantage = np.reshape(advantage, [-1]) #turn into row vec
 
         sess_args = [self.global_step, self.a_loss_summary, self.c_loss_summary, self.train_op]
-        feed_dict = {self.x_batch: s_batch,
+        feed_dict = {self.s_imgs_batch: s_imgs_batch,
+                     self.s_vector_batch: s_vector_batch,
                     self.actor_labels: advantage,
                     self.critic_labels: k_step_return,
                     self.actions_taken: a_batch}
@@ -117,8 +119,8 @@ class A2C:
 
         return step
 
-    # TODO: make take in 3 states
-    def get_actions(self, states, action_validity):
+
+    def get_actions(self, batch_triple, action_validity):
         """
         Predict all Q values for a state -> softmax dist -> sample from dist
 
@@ -127,8 +129,10 @@ class A2C:
 
         :return: A list of the action for each state
         """
-        feed_dict = {self.x_batch: states}
-        policy_probs = self.sess.run(self.policy_probs, feed_dict=feed_dict)
+        s_imgs_batch, s_vector_batch = utils.unpack_batch_triple(batch_triple)
+
+        feed_dict = {self.s_imgs_batch: s_imgs_batch, self.s_vector_batch: s_vector_batch}
+        policy_probs = self.policy_probs.eval(feed_dict=feed_dict)
         # for each batch, look at the probabilities of just the valid states (passed in as indices)
         valid_actions = np.nonzero(action_validity)
         valid_policy_probs = policy_probs[valid_actions]

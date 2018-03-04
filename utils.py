@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-def conv_layers(self, scope_name, inpt, channel_sizes, kernels, strides):
+def conv_layers(scope_name, inpt, channel_sizes, kernels, strides):
       with tf.variable_scope(scope_name, reuse=False):
           conv_tensor = inpt
           for channels, kernel_len, stride_len in zip(channel_sizes, kernels, strides):
@@ -18,11 +18,16 @@ def conv_layers(self, scope_name, inpt, channel_sizes, kernels, strides):
       return flattened_conv
 
 
-  def fc_layers(self, scope_name, inpt, layer_sizes):
+  def fc_layers(scope_name, inpt, layer_sizes):
       with tf.variable_scope(name, reuse=False):
           for i, sz in enumerate(layer_sizes):
               fc_layer = tf.layers.dense(inpt, sz,
                                          name='fc_%d' % i, activation=tf.nn.relu)
 
-def calculate_entropy(self, p):
+def calculate_entropy(p):
     return tf.reduce_sum(-tf.log(p) * p)
+
+def unpack_batch_triple(batch_triple):
+    s_imgs_batch, vectors, scalar = batch_triple
+    s_vector_batch = np.concatenate(np.reshape(vectors, [-1]), scalar)
+    return s_imgs_batch, s_vector_batch

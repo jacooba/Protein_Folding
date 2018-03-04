@@ -1,8 +1,8 @@
 import os
+import numpy as np
 
 
 L = 40 #protein length
-VEC_SZ = L-1 #the length of the input vector (HP string after first is placed)
 
 IN_WIDTH = 2 * L
 IN_HEIGHT = 2 * L
@@ -26,12 +26,9 @@ FC_SIZES = [1024]
 
 SAVE_FREQ = 500
 
-
-
 NUM_ACTIONS = 4 #action "0" is up, "1" is right, etc
 K = int("inf") #the k-step return
 
-L = 40 #protein length
 VEC_SZ = L-1 #the length of the input vector (HP string after first is placed)
 
 NUM_ENVS = 5
@@ -39,7 +36,6 @@ NUM_EPOCHS = 4
 GAMMA = 0.99
 
 ENTROPY_REGULARIZATION_WEIGHT = 0.01
-
 
 GRAPH_DIR = os.path.join(os.getcwd(), "Graph")
 MODEL_DIR = os.path.join(os.getcwd(), "Model")
