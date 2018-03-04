@@ -22,11 +22,11 @@ NUM_ACTIONS = 4
 K = int("inf") #the k-step return
 
 L = 40 #protein length
-INPUT_SZ = L-1 #the length of the input vector (HP string after first is placed)
+VEC_SZ = L-1 #the length of the input vector (HP string after first is placed)
 
 NUM_ENVS = 5
 NUM_EPOCHS = 4
-GAMMA = 0.9999 #????
+GAMMA = 0.99
 
 ENTROPY_REGULARIZATION_WEIGHT = 0.01
 
