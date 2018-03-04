@@ -143,7 +143,7 @@ class Runner:
         sequence = protein[1:]
         sequence_pos = np.zeros_like(sequence)
         sequence_pos[0] = 1
-        sequence_array = np.stack([sequence, sequence_pos], axis=-1)
+        sequence_array = np.stack([sequence, sequence_pos], axis=0)
 
         #set up current aminoacid
         current_aminoacid = sequence[0]
@@ -205,7 +205,7 @@ class Runner:
         new_sequence[cur_index] = 0
         new_sequence_pos = np.zeros_like(sequence)
         new_sequence_pos[cur_index+1] = 1
-        sequence_array = np.stack([new_sequence, new_sequence_pos], axis=-1)
+        sequence_array = np.stack([new_sequence, new_sequence_pos], axis=0)
 
         #new current amino acid
         new_current_aminoacid = new_sequence[cur_index+1]
