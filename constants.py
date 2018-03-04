@@ -1,18 +1,28 @@
 import os
 
 
-IN_WIDTH = 84
-IN_HEIGHT = 84
-IN_CHANNELS = 4
+L = 40 #protein length
+VEC_SZ = L-1 #the length of the input vector (HP string after first is placed)
 
-NUM_CONV_LAYERS = 3
-CHANNEL_SIZES = [32, 64, 32]
-CONV_KERNEL_SIZES = [(8, 8), (4, 4), (3, 3)]
-CONV_STRIDES = [(4, 4), (2, 2), (1, 1)]
-FC_INPUT_SIZE = 3872
-FC_SIZE = 512
+IN_WIDTH = 2 * L
+IN_HEIGHT = 2 * L
+IN_CHANNELS = 2
 
-assert len(CHANNEL_SIZES) == len(CONV_KERNEL_SIZES) == len(CONV_STRIDES) == NUM_CONV_LAYERS
+SMALL_CONV_CHANNELS = [5]
+SMALL_CONV_KERNELS = [3]
+SMALL_CONV_STRIDES = [1]
+
+SMALL_FLATTEN_SIZE = IN_WIDTH * IN_HEIGHT * SMALL_CONV_CHANNELS[-1] / np.prod(np.array(SMALL_CONV_STRIDES))
+
+BIG_CONV_CHANNELS = [5, 10, 20, 30]
+BIG_CONV_KERNELS = [int(math.sqrt(L / 2)), int(math.sqrt(L / 4)), 4, 2]
+BIG_CONV_STRIDES = [1, 2, 3, 4]
+
+BIG_FLATTEN_SIZE = IN_WIDTH * IN_HEIGHT * BIG_CONV_CHANNELS[-1]) / np.prod(np.array(BIG_CONV_STRIDES))
+
+PADDING = "SAME"
+
+FC_SIZES = [1024]
 
 SAVE_FREQ = 500
 
@@ -34,5 +44,3 @@ ENTROPY_REGULARIZATION_WEIGHT = 0.01
 GRAPH_DIR = os.path.join(os.getcwd(), "Graph")
 MODEL_DIR = os.path.join(os.getcwd(), "Model")
 MODEL_PATH = os.path.join(MODEL_DIR, "model")
-
-
