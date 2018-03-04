@@ -28,7 +28,7 @@ SAVE_FREQ = 500
 
 
 
-NUM_ACTIONS = 4
+NUM_ACTIONS = 4 #action "0" is up, "1" is right, etc
 K = int("inf") #the k-step return
 
 L = 40 #protein length
