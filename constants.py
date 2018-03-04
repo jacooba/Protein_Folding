@@ -21,7 +21,9 @@ SAVE_FREQ = 500
 NUM_ACTIONS = 4
 K = int("inf") #the k-step return
 
-PROTEIN_LEN = 10
+L = 40 #protein length
+INPUT_SZ = L-1 #the length of the input vector (HP string after first is placed)
+
 NUM_ENVS = 5
 NUM_EPOCHS = 4
 GAMMA = 0.9999 #????

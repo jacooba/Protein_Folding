@@ -28,7 +28,7 @@ class Runner:
         self.run(display=True)
 
     def run(self, train=False, display=False):
-        protein_envs = np.random.choice([0, 1], size=[c.NUM_ENVS, c.PROTEIN_LEN])
+        protein_envs = np.random.choice([0, 1], size=[c.NUM_ENVS, c.L])
         protein0_scores = []
         for epoch in xrange(c.NUM_EPOCHS):
             print "ON EPOCH", epoch
