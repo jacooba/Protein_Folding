@@ -1,9 +1,5 @@
-from baselines_utils import ortho_init
-import constants as c
-import glob
-import numpy as np
-import os
-import tensorflow as tf
+import glob, os, utils
+import constants as c, numpy as np, tensorflow as tf
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -19,69 +15,67 @@ class A2C:
 
         self.saver = tf.train.Saver()
 
-        check_point = tf.train.get_checkpoint_state(self.args.model_load_dir)
+        check_point = tf.train.get_checkpoint_state(c.MODEL_DIR)
         if check_point and check_point.model_checkpoint_path:
             print 'Restoring model from ' + check_point.model_checkpoint_path
             self.saver.restore(self.sess, check_point.model_checkpoint_path)
 
         #set up new writer
-        self.summary_writer = tf.summary.FileWriter(self.args.summary_save_dir, self.sess.graph)
+        self.summary_writer = tf.summary.FileWriter(c.SUMMARY_DIR, self.sess.graph)
 
 
-    def define_graph(self):
-        self.global_step = tf.Variable(0, name="global_step", trainable=False)
+    def define_placeholders():
         self.s_imgs_batch = tf.placeholder(dtype=tf.float32,
-                                           shape=[None, c.PROTEIN_LENGTH,
-                                                  c.PROTEIN_LENGTH, c.IN_CHANNELS])
+                                           shape=[None, c.IN_WIDTH,
+                                                  c.IN_HEIGHT, c.IN_CHANNELS])
         self.s_vector_batch = tf.placeholder(dtype=tf.int32,
-                                             shape=[None, 2 * c.PROTEIN_LENGTH - 1])
+                                             shape=[None, 2 * c.L - 1])
         self.actions_taken = tf.placeholder(dtype=tf.int32)
         self.actor_labels = tf.placeholder(dtype=tf.float32)
         self.critic_labels = tf.placeholder(dtype=tf.float32)
 
+
+    def define_graph(self):
+        self.global_step = tf.Variable(0, name="global_step", trainable=False)
+        self.define_placeholders()
+
         with tf.variable_scope("model", reuse=False):
-            with tf.variable_scope("conv", reuse=False):
-                #convs
-                channel_sizes = [c.IN_CHANNELS] + c.CHANNEL_SIZES
-                prev_layer = tf.cast(self.x_batch, tf.float32)
-                for i in xrange(c.NUM_CONV_LAYERS):
-                    stride = (1,) + c.CONV_STRIDES[i] + (1,)
-                    conv_layer = tf.layers.conv2d(prev_layer, filters=channel_sizes[i + 1],
-                                                  kernel_size=c.CONV_KERNEL_SIZES[i],
-                                                  strides=stride, padding="VALID",
-                                                  activation=tf.nn.relu, name="conv_%d" % i)
-                    conv_layer = tf.nn.relu(conv_layer)
-                    prev_layer = conv_layer
+            flattened_small_conv = utils.conv_layers("small_conv",
+                                                    self.s_imgs_batch,
+                                                    c.SMALL_CONV_CHANNELS,
+                                                    c.SMALL_CONV_KERNELS,
+                                                    c.SMALL_CONV_STRIDES)
 
-            #fully connected layers
-            with tf.variable_scope("fc", reuse=False):
-                conv_shape = cur_layer.shape
-                flat_sz = conv_shape[1].value * conv_shape[2].value * conv_shape[3].value
-                flattened = tf.reshape(cur_layer, shape=[-1, flat_sz])
+            flattened_big_conv = utils.conv_layers("big_conv",
+                                                  self.s_imgs_batch,
+                                                  c.BIG_CONV_CHANNELS,
+                                                  c.BIG_CONV_KERNELS,
+                                                  c.BIG_CONV_STRIDES)
 
-                fc_layer = tf.layers.dense(flattened, c.FC_SIZE, name='fc_layer')
-                fc_layer = tf.nn.relu(fc_layer)
+            flattened = tf.concat([flattened_small_conv, flattened_big_conv],
+                                   axis=1, name="flattened_conv")
+
+            fc_output = utils.fc_layers("fc", flattened, c.FC_SIZES)
 
             #policy output layer
-            self.policy_logits = tf.layers.dense(fc_layer, self.num_actions, name='policy_logits')
+            self.policy_logits = tf.layers.dense(fc_output, self.num_actions, name='policy_logits')
             self.policy_probs = tf.nn.softmax(self.policy_logits)
 
             #value output layer
-            self.value_preds = tf.layers.dense(fc_layer, 1, name='value_fc_layer')
+            self.value_preds = tf.layers.dense(fc_output, 1, name='value_fc_layer')
             self.value_preds = tf.squeeze(self.value_preds, axis=1)
 
-            params = tf.trainable_variables() #"model" scope's variables
+        self.define_losses_and_summaries()
 
+    def define_losses_and_summaries():
+        logpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.policy_logits,
+                                                                labels=self.actions_taken)
 
-        #intentionally defined outside of scope. Loss calculations:
-
-        logpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.policy_logits, labels=self.actions_taken)
-
+        self.entropy = tf.reduce_mean(utils.entropy(self.policy_probs))
         self.actor_loss = tf.reduce_mean(self.actor_labels * logpac)
-        self.critic_loss = tf.reduce_mean(tf.square(self.value_preds - self.critic_labels)) / 2.0
+        self.actor_loss = self.actor_loss - c.ENTROPY_REGULARIZATION_WEIGHT * self.entropy
 
-        self.entropy_regularization = tf.reduce_mean(self.calculate_entropy(self.policy_logits))
-        self.actor_loss = self.actor_loss - c.ENTROPY_REGULARIZATION_WEIGHT * self.entropy_regularization
+        self.critic_loss = tf.losses.mean_squared_error(self.critic_labels, self.value_preds)
 
         self.total_loss = self.actor_loss + c.CRITIC_LOSS_WEIGHT * self.critic_loss
 
@@ -91,44 +85,42 @@ class A2C:
         #summaries
         self.a_loss_summary = tf.summary.scalar("actor_loss", self.actor_loss)
         self.c_loss_summary = tf.summary.scalar("critic_loss", self.critic_loss)
-
         self.ep_reward = tf.placeholder(tf.float32)
         self.ep_reward_summary = tf.summary.scalar("episode_reward", self.ep_reward)
 
-    def calculate_entropy(self, logits):
-        a0 = logits - tf.reduce_max(logits, 1, keep_dims=True)
-        ea0 = tf.exp(a0)
-        z0 = tf.reduce_sum(ea0, 1, keep_dims=True)
-        p0 = ea0 / z0
-        return tf.reduce_sum(p0 * (tf.log(z0) - a0), axis=1)
 
-    def get_values(self, s_batch):
-        v_s = self.sess.run(self.value_preds, feed_dict={self.x_batch: s_batch})
-        return v_s
+    def get_values(self, s_imgs_batch, s_vector_batch):
+        return self.value_preds.eval(feed_dict={self.s_imgs_batch: s_imgs_batch,
+                                                self.s_vector_batch: s_vector_batch})
 
-    def train_step(self, s_batch, a_batch, r_batch):
-        v_s = self.get_values(s_batch)
+
+    def train_step(self, batch_triple, a_batch, r_batch):
+        s_imgs_batch, s_vector_batch = utils.unpack_batch_triple(batch_triple)
+
+        v_s = self.get_values(s_imgs_batch, s_vector_batch)
         advantage = r_batch - v_s #estimated k-step return - v_s
         k_step_return = np.reshape(r_batch, [-1]) #turn into row vec
         advantage = np.reshape(advantage, [-1]) #turn into row vec
 
         sess_args = [self.global_step, self.a_loss_summary, self.c_loss_summary, self.train_op]
-        feed_dict = {self.x_batch: s_batch,
+        feed_dict = {self.s_imgs_batch: s_imgs_batch,
+                     self.s_vector_batch: s_vector_batch,
                     self.actor_labels: advantage,
                     self.critic_labels: k_step_return,
                     self.actions_taken: a_batch}
         step, a_summary, c_summary, _ = self.sess.run(sess_args, feed_dict=feed_dict)
 
-        if (step - 1) % self.args.summary_save_freq == 0:
+        if (step - 1) % c.SUMMARY_SAVE_FREQ == 0:
             self.summary_writer.add_summary(a_summary, global_step=step)
             self.summary_writer.add_summary(c_summary, global_step=step)
 
-        if (step - 1) % self.args.model_save_freq == 0:
-            self.saver.save(self.sess, os.path.join(self.args.model_save_dir, 'model'), global_step=step)
+        if (step - 1) % c.MODEL_SAVE_FREQ == 0:
+            self.saver.save(self.sess, os.path.join(c.MODEL_DIR, 'model'), global_step=step)
 
         return step
 
-    def get_actions(self, states, action_validity):
+
+    def get_actions(self, batch_triple, action_validity):
         """
         Predict all Q values for a state -> softmax dist -> sample from dist
 
@@ -137,8 +129,10 @@ class A2C:
 
         :return: A list of the action for each state
         """
-        feed_dict = {self.x_batch: states}
-        policy_probs = self.sess.run(self.policy_probs, feed_dict=feed_dict)
+        s_imgs_batch, s_vector_batch = utils.unpack_batch_triple(batch_triple)
+
+        feed_dict = {self.s_imgs_batch: s_imgs_batch, self.s_vector_batch: s_vector_batch}
+        policy_probs = self.policy_probs.eval(feed_dict=feed_dict)
         # for each batch, look at the probabilities of just the valid states (passed in as indices)
         valid_actions = np.nonzero(action_validity)
         valid_policy_probs = policy_probs[valid_actions]
@@ -154,7 +148,6 @@ class A2C:
 
         self.summary_writer.add_summary(summary, global_step=steps)
 
-from utils import parse_args
 
 if __name__ == '__main__':
     num_actions = 5
